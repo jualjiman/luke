@@ -1,11 +1,12 @@
 #!/bin/bash
 echo "Updating apt repositories..."
+add-apt-repository ppa:chris-lea/node.js
 apt-get update
 
 
 echo "Installing base packages..."
 PACKAGES="build-essential zsh git vim-nox tree htop libjpeg-dev libfreetype6-dev graphviz gettext"
-PACKAGES="$PACKAGES python python-setuptools python-pip python-dev"
+PACKAGES="$PACKAGES python python-setuptools python-pip python-dev nodejs"
 PACKAGES="$PACKAGES postgresql-9.3 postgresql-server-dev-9.3"
 
 apt-get install -y $PACKAGES
@@ -54,6 +55,10 @@ REQUIREMENTS_FILE=/home/vagrant/src/requirements/devel.txt
 if [ -f "$REQUIREMENTS_FILE" ]; then
     sudo -Hu vagrant bash -c "source $VIRTUALENV_DIR/bin/activate && pip install -r $REQUIREMENTS_FILE"
 fi
+
+
+echo "Installing Stylus css precompiler..."
+npm install stylus -g
 
 
 echo "Creating Django project..."

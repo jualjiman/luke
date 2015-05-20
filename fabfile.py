@@ -11,6 +11,11 @@ from fabutils.tasks import ulocal, urun, ursync_project
 from fabutils.text import SUCCESS_ART
 
 
+project_tools = {
+    'is_using_stylus': False
+}
+
+
 @contextmanager
 def virtualenv():
     """
@@ -104,12 +109,54 @@ def collectstatic():
 
 
 @task
+def createsuperuser():
+    """
+    Creates super user
+    """
+    with virtualenv():
+        run('python manage.py createsuperuser')
+
+
+@task
+def runtests(app=""):
+    """
+    Runs django tests
+    """
+    with virtualenv():
+        run("coverage run --source='.' manage.py test %s" % app)
+        run("coverage html  \
+            --omit=luke/settings/*,luke/wsgi.py")
+
+
+@task
 def runserver():
     """
     Starts the development server inside the Vagrant VM.
     """
+
+    # Check if stylus compilation is needed
+    checkstylus()
+
     with virtualenv():
         run('python manage.py runserver_plus 0.0.0.0:8000')
+
+
+@task
+def styluscompile(watch=False):
+    """
+    Compiles custom.styl file to css.
+    """
+    watch_config = ""
+    if watch:
+        watch_config = "-w"
+
+    with virtualenv():
+        run('stylus -c %s assets/css/custom.styl' % watch_config)
+
+
+def checkstylus():
+    if project_tools['is_using_stylus']:
+        styluscompile()
 
 
 @task
@@ -121,6 +168,9 @@ def deploy(git_ref, upgrade=False):
     project requirements (with pip).
     """
     require('hosts', 'user', 'group', 'site_dir', 'django_settings')
+
+    # Check if stylus compilation is needed
+    checkstylus()
 
     # Retrives git reference metadata and creates a temp directory with the
     # contents resulting of applying a ``git archive`` command.

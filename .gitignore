@@ -1,2 +1,5 @@
 .vagrant/
+src/htmlcov
+.coverage
 *.pyc
+src/assets/css/custom.css
