@@ -2,3 +2,4 @@
 
 # Development tools
 django-debug-toolbar
+coverage==3.7.1

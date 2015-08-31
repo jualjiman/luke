@@ -6,3 +6,4 @@ psycopg2>=2.6,<2.7
 ipython
 django-extensions
 Werkzeug
+django-bower>=5.0,<5.1

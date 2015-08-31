@@ -1,7 +1,10 @@
 # -*- coding: utf-8 -*-
+import os
+import json
+
 from fabric.api import cd, env, require, run, task
 from fabric.colors import green, white
-from fabric.context_managers import contextmanager, shell_env
+from fabric.context_managers import contextmanager, shell_env, prefix
 from fabric.utils import puts
 
 from fabutils import arguments, join, options
@@ -9,6 +12,16 @@ from fabutils.env import set_env_from_json_file
 from fabutils.context import cmd_msg
 from fabutils.tasks import ulocal, urun, ursync_project
 from fabutils.text import SUCCESS_ART
+from fabutils.utils import boolean
+
+
+project_conf = {
+    "name": "luke",
+    "tools": {
+        "stylus": True,
+        "bower": False,
+    }
+}
 
 
 @contextmanager
@@ -36,6 +49,48 @@ def environment(env_name):
     set_env_from_json_file('environments.json', env_name)
 
 
+def get_property_from_env(env, property):
+    with open('environments.json', 'r') as environments_data:
+        json_envs_data = json.load(environments_data)
+
+        return json_envs_data[env][property]
+
+
+def checkstylus():
+    if project_conf['tools']['stylus']:
+        styluscompile()
+
+
+@task
+def styluscompile(watch=False):
+    """
+    Compiles custom.styl file to css.
+    """
+    watch_config = ''
+    if watch:
+        watch_config = '-w'
+
+    with virtualenv(), prefix('nvm use stable'), shell_env(CI='true'):
+        run('stylus -c {0} assets/css/custom.styl'.format(watch_config))
+
+
+def bower_install():
+    """
+    Installs frontend dependencies with bower.
+    """
+    with virtualenv(), prefix('nvm use stable'), shell_env(CI='true'):
+        run('bower install')
+
+
+@task
+def bower_install_package(package):
+    """
+    Installs frontend individual package dependencies with bower.
+    """
+    with virtualenv(), prefix('nvm use stable'), shell_env(CI='true'):
+        run('bower install {0} --save'.format(package))
+
+
 @task
 def startapp(app_name):
     """
@@ -56,11 +111,33 @@ def createsuperuser():
 
 
 @task
+def runtests(app=""):
+    """
+    Runs django tests
+    """
+    with virtualenv():
+        run("coverage run --source='.' manage.py test {0}".format(app))
+        run("coverage html --omit=luke/settings/*,luke/wsgi.py")
+
+
+@task
 def createdb():
     """
     Creates a new database instance with utf-8 encoding for the project.
     """
-    urun('createdb luke -l en_US.UTF-8 -E UTF8 -T template0')
+    urun(
+        'createdb {0} -l en_US.UTF-8 -E UTF8 -T template0'.format(
+            project_conf['name']
+        )
+    )
+
+
+@task
+def dropdb():
+    """
+    Drops the project's database
+    """
+    urun('dropdb {0}'.format(project_conf['name']))
 
 
 @task
@@ -68,7 +145,7 @@ def resetdb():
     """
     Reset the project's database by dropping an creating it again.
     """
-    urun('dropdb luke')
+    dropdb()
     createdb()
     migrate()
 
@@ -81,6 +158,8 @@ def bootstrap():
     # Build the DB schema and collect the static files.
     createdb()
     migrate()
+    if project_conf['tools']['bower']:
+        bower_install()
     collectstatic()
 
 
@@ -123,10 +202,29 @@ def collectstatic():
 
 
 @task
+def install_requirements(upgrade=False):
+    """
+    Installs the python dependencies specified in the given requirements file.
+    """
+    require('env_name', 'site_dir')
+
+    requirements = env.env_name if env.env_name != 'vagrant' else 'devel'
+    path = os.path.realpath(os.path.join(
+        env.site_dir, 'requirements', '{0}.txt'.format(requirements)))
+
+    with virtualenv():
+        run('pip install -{0}r {1}'.format('U' if upgrade else '', path))
+
+
+@task
 def runserver():
     """
     Starts the development server inside the Vagrant VM.
     """
+
+    # Checks if stylus compilation is needed
+    checkstylus()
+
     with virtualenv():
         run('python manage.py runserver_plus 0.0.0.0:8000')
 
@@ -159,19 +257,27 @@ def deploy(git_ref, upgrade=False):
         ulocal('git archive {0} ./src | tar -xC {1} --strip 1'.format(
             commit, tmp_dir))
 
+    # Puts the site into maintenance mode.
+    with cmd_msg(white('Enabling maintenance mode', bold=True)):
+        maintenance('on')
+
     # Uploads the code of the temp directory to the host with rsync telling
     # that it must delete old files in the server, upload deltas by checking
     # file checksums recursivelly in a zipped way; changing the file
     # permissions to allow read, write and execution to the owner, read and
     # execution to the group and no permissions for any other user.
-    with cmd_msg(white('Uploading code to server...', bold=True)):
+    with cmd_msg(white('Uploading code to server', bold=True)):
         ursync_project(
             local_dir=tmp_dir,
             remote_dir=env.site_dir,
             delete=True,
             default_opts='-chrtvzP',
             extra_opts='--chmod=750',
-            exclude=["*.pyc", "env/", "cover/"]
+            exclude=[
+                "*.pyc", "env/",
+                "cover/", "*.style",
+                "bower_components",
+            ]
         )
 
     # Performs the deployment task, i.e. Install/upgrade project
@@ -181,31 +287,43 @@ def deploy(git_ref, upgrade=False):
     with cmd_msg(message, grouped=True):
         with virtualenv():
 
-            message = white('Installing Python requirements with pip')
+            message = 'Installing Python requirements with pip'
             with cmd_msg(message, spaces=2):
-                run('pip install -{0}r ./requirements/production.txt'.format(
-                    'U' if upgrade else ''))
+                install_requirements(upgrade=upgrade)
 
-            message = white('Migrating database')
+            message = 'Migrating database'
             with cmd_msg(message, spaces=2):
-                run('python manage.py migrate --noinput')
+                migrate(noinput=True)
 
-            message = white('Collecting static files')
+            message = 'Installing bower components'
             with cmd_msg(message, spaces=2):
-                run('python manage.py collectstatic --noinput')
+                bower_install()
 
-            message = white('Setting file permissions')
+            message = 'Collecting static files'
+            with cmd_msg(message, spaces=2):
+                collectstatic()
+
+            message = 'Setting file permissions'
             with cmd_msg(message, spaces=2):
                 run('chgrp -R {0} .'.format(env.group))
                 run('chgrp -R {0} ../media'.format(env.group))
 
-            message = white('Restarting webserver')
+            message = 'Restarting webserver'
             with cmd_msg(message, spaces=2):
                 run('touch ../reload')
 
-            message = white('Registering deployment')
+            message = 'Restarting celery workers'
+            with cmd_msg(message, spaces=2):
+                run('sudo /usr/bin/supervisorctl restart {0}-celeryd'.format(
+                    env.user))
+
+            message = 'Registering deployment'
             with cmd_msg(message, spaces=2):
                 register_deployment(commit, branch)
+
+    # Disable maintenance mode.
+    with cmd_msg(white('Disabling maintenance mode', bold=True)):
+        maintenance('off')
 
     # Clean the temporary snapshot files that was just deployed to the host
     message = white('Cleaning up...', bold=True)
@@ -230,3 +348,27 @@ def register_deployment(commit, branch):
             '--component path:. vcs:git rev:%s branch:%s '
             % (commit, branch)
         )
+
+
+@task
+def maintenance(state):
+    """
+    Sets maintenance mode 'on' or 'off' on the server.
+    """
+    require('maintenance_dir')
+
+    if boolean(state):
+        ursync_project(
+            local_dir='./maintenance/',
+            remote_dir=env.maintenance_dir,
+            delete=True,
+            default_opts='-chrtvzP',
+            extra_opts='--chmod=750',
+        )
+
+        with cd(env.maintenance_dir):
+            run('chgrp -R {0} .'.format(env.group))
+
+    else:
+        with cd(env.maintenance_dir):
+            run('rm -rf ./*')

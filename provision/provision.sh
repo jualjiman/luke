@@ -1,11 +1,12 @@
 #!/bin/bash
 echo "Updating apt repositories..."
+add-apt-repository ppa:chris-lea/node.js
 apt-get update
 
 
 echo "Installing base packages..."
 PACKAGES="build-essential zsh git vim-nox tree htop libjpeg-dev libfreetype6-dev graphviz gettext"
-PACKAGES="$PACKAGES python python-setuptools python-pip python-dev"
+PACKAGES="$PACKAGES python python-setuptools python-pip python-dev nodejs"
 PACKAGES="$PACKAGES postgresql-9.3 postgresql-server-dev-9.3"
 
 apt-get install -y $PACKAGES
@@ -45,6 +46,16 @@ if [ ! -d "$VIRTUALENV_DIR" ]; then
     mkdir $VIRTUALENV_DIR
     virtualenv $VIRTUALENV_DIR
     chown -R vagrant:vagrant $VIRTUALENV_DIR
+fi
+
+echo "Configuring nodejs and tools with nvm..."
+NVM_DIR=/home/vagrant/env/nvm
+
+if [ ! -d "$NVM_DIR"  ]; then
+    git clone https://github.com/creationix/nvm.git $NVM_DIR && cd $NVM_DIR && git checkout `git describe --abbrev=0 --tags`
+    chown -R vagrant:vagrant $NVM_DIR
+    sudo -Hu vagrant bash -c "source $NVM_DIR/nvm.sh && nvm install stable && npm install bower -g"
+    sudo -Hu vagrant bash -c "source $NVM_DIR/nvm.sh && nvm install stable && npm install stylus -g"
 fi
 
 
