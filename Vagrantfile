@@ -75,5 +75,6 @@ Vagrant.configure(2) do |config|
   #   sudo apt-get install -y apache2
   # SHELL
   config.vm.provision "file", source: "./provision/templates", destination: "/tmp/templates"
+  config.vm.provision "file", source: "./settings.json", destination: "/tmp/settings.json"
   config.vm.provision "shell", path: "./provision/provision.sh"
 end

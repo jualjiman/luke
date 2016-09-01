@@ -7,7 +7,8 @@ echo "Installing base packages..."
 PACKAGES="build-essential zsh git vim-nox tree htop libjpeg-dev libfreetype6-dev graphviz gettext"
 PACKAGES="$PACKAGES python python-setuptools python-pip python-dev"
 PACKAGES="$PACKAGES postgresql-9.3 postgresql-server-dev-9.3"
-PACKAGES="$PACKAGES nginx"
+PACKAGES="$PACKAGES nginx jq"
+
 
 apt-get install -y $PACKAGES
 
@@ -30,7 +31,6 @@ service nginx restart
 
 
 echo "Installing Oh My Zsh!..."
-PROJECT_NAME=luke
 OHMYZSH_DIR=/home/vagrant/.oh-my-zsh
 
 if [ ! -d $OHMYZSH_DIR ]; then
@@ -66,7 +66,9 @@ if [ -f "$REQUIREMENTS_FILE" ]; then
 fi
 
 
-echo "Creating Django project..."
+PROJECT_NAME=$(cat /tmp/settings.json | jq .name --raw-output)
+echo "Creating Django project ($PROJECT_NAME)..."
+
 PROJECT_DIR=/home/vagrant/src/$PROJECT_NAME
 
 if [ ! -d  "$PROJECT_DIR" ]; then

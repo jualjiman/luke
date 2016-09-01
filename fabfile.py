@@ -20,7 +20,13 @@ def virtualenv():
     require('site_dir', 'django_settings')
 
     with cd(env.site_dir):
-        with shell_env(DJANGO_SETTINGS_MODULE=env.django_settings):
+        with shell_env(
+                # eg. myproject.settings.local
+                DJANGO_SETTINGS_MODULE='{}.settings.{}'.format(
+                    env.name,
+                    env.django_settings
+                )
+        ):
             yield
 
 
@@ -38,7 +44,9 @@ def environment(env_name):
         result = ulocal('vagrant ssh-config | grep IdentityFile', capture=True)
         env.key_filename = result.split()[1].replace('"', '')
 
+    # Importing from environments, but also from project configurations.
     set_env_from_json_file('environments.json', env_name)
+    set_env_from_json_file('settings.json')
 
 
 @task
@@ -78,7 +86,9 @@ def createdb():
     Usage:
         >>>fab environment:vagrant createdb.
     """
-    urun('createdb luke -l en_US.UTF-8 -E UTF8 -T template0')
+    urun(
+        'createdb {} -l en_US.UTF-8 -E UTF8 -T template0'.format(env.name)
+    )
 
 
 @task
@@ -90,7 +100,7 @@ def resetdb():
     Usage:
         >>>fab environment:vagrant resetdb.
     """
-    urun('dropdb luke')
+    urun('dropdb {}'.format(env.name))
     createdb()
     migrate()
 
@@ -200,7 +210,7 @@ def deploy(git_ref, upgrade=False):
     Example:
         >>>fab environment:vagrant deploy:devel.
     """
-    require('hosts', 'user', 'group', 'site_dir', 'django_settings')
+    require('hosts', 'user', 'group', 'site_dir')
 
     # Retrives git reference metadata and creates a temp directory with the
     # contents resulting of applying a ``git archive`` command.
